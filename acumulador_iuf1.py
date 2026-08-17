@@ -97,7 +97,8 @@ with col_b:
         st.session_state.advertencias = []
         st.rerun()
 
-COLS_REQ = ["NIU","COD LOCALIDAD","FECH INI PERIO","TARIFA"]
+COLS_REQ_BASE = ["NIU","COD LOCALIDAD","FECH INI PERIO"]
+COLS_TARIFA   = ["TARIFA","VALOR_TARIFA"]  # se acepta cualquiera de las dos
 
 if procesar and archivos:
     adv, nuevos = [], []
@@ -106,13 +107,21 @@ if procesar and archivos:
         try:
             df = pd.read_excel(archivo, sheet_name=0, dtype=str)
             df.columns = df.columns.str.strip().str.upper()
-            falt = [c for c in COLS_REQ if c not in df.columns]
+
+            # Validar columnas base
+            falt = [c for c in COLS_REQ_BASE if c not in df.columns]
             if falt:
                 adv.append(f"⚠️ **{nombre}**: faltan → {', '.join(falt)}"); continue
+
+            # Detectar columna de tarifa
+            col_tarifa = next((c for c in COLS_TARIFA if c in df.columns), None)
+            if col_tarifa is None:
+                adv.append(f"⚠️ **{nombre}**: no se encontró columna TARIFA ni VALOR_TARIFA."); continue
+
             df["NIU"]            = df["NIU"].str.strip()
             df["COD LOCALIDAD"]  = df["COD LOCALIDAD"].str.strip()
             df["MES_ANIO"]       = df["FECH INI PERIO"].apply(extraer_mes_anio)
-            df["TARIFA"]         = pd.to_numeric(df["TARIFA"].str.replace(",","."), errors="coerce")
+            df["TARIFA"]         = pd.to_numeric(df[col_tarifa].str.replace(",","."), errors="coerce")
             nulos = df["TARIFA"].isna().sum()
             if nulos: adv.append(f"ℹ️ **{nombre}**: {nulos} filas con TARIFA no numérica omitidas.")
             df = df.dropna(subset=["NIU","TARIFA"])
