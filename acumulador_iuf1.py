@@ -276,7 +276,8 @@ if not st.session_state.df_acum.empty:
         td_loc["TOTAL"] = td_loc["TOTAL"].apply(lambda x: f"${x:,.2f}" if isinstance(x, float) else x)
         # recalcular TOTAL numérico para display
         td_loc2 = pivot_loc.copy()
-        td_loc2[RANGOS + ["TOTAL"]] = td_loc2[RANGOS + ["TOTAL"]].applymap(lambda x: f"${x:,.2f}")
+        for col in RANGOS + ["TOTAL"]:
+            td_loc2[col] = td_loc2[col].apply(lambda x: f"${x:,.2f}")
         td_loc2.index = range(1, len(td_loc2)+1)
         st.dataframe(td_loc2, use_container_width=True, height=420)
         st.caption(f"{len(pivot_loc):,} localidades")
