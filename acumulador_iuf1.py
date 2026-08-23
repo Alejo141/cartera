@@ -174,26 +174,49 @@ if not st.session_state.df_acum.empty:
         key=lambda x: mes_a_fecha(x) or datetime.min
     )
 
-    st.markdown('<p class="section-title">② Seleccionar meses para la cartera</p>', unsafe_allow_html=True)
+    st.markdown('<p class="section-title">② Configurar período de cartera</p>', unsafe_allow_html=True)
 
-    meses_sel = st.multiselect(
-        "Meses cargados — selecciona los que deseas incluir en el análisis",
-        options=meses_disponibles, default=meses_disponibles,
-        help="El mes más reciente seleccionado es el punto de corte para calcular antigüedad."
-    )
+    col_c1, col_c2 = st.columns([1, 2])
+
+    with col_c1:
+        st.markdown("**Mes de corte** *(referencia — no entra al cálculo)*")
+        mes_corte = st.selectbox(
+            "Mes de corte",
+            options=meses_disponibles,
+            index=len(meses_disponibles) - 1,
+            label_visibility="collapsed",
+            help="La antigüedad se mide en meses hacia atrás desde este mes."
+        )
+        fecha_corte = mes_a_fecha(mes_corte)
+
+    with col_c2:
+        st.markdown("**Meses de cartera** *(meses cuya tarifa se acumula)*")
+        meses_cartera_default = [m for m in meses_disponibles if mes_a_fecha(m) < fecha_corte]
+        meses_sel = st.multiselect(
+            "Meses de cartera",
+            options=[m for m in meses_disponibles if m != mes_corte],
+            default=meses_cartera_default,
+            label_visibility="collapsed",
+            help="Cada mes se clasifica según su distancia al mes de corte."
+        )
 
     if not meses_sel:
-        st.info("Selecciona al menos un mes para continuar.")
+        st.info("Selecciona al menos un mes de cartera para continuar.")
         st.stop()
 
     meses_sel_ord = sorted(meses_sel, key=lambda x: mes_a_fecha(x) or datetime.min)
-    mes_corte    = meses_sel_ord[-1]
-    fecha_corte  = mes_a_fecha(mes_corte)
+
+    with st.expander("👁 Ver antigüedad por mes seleccionado"):
+        def calc_dias_preview(m):
+            f = mes_a_fecha(m)
+            return ((fecha_corte.year - f.year)*12 + (fecha_corte.month - f.month)) * 30
+        prev = [{"Mes": m, "Días antigüedad": calc_dias_preview(m), "Rango": rango(calc_dias_preview(m))} for m in meses_sel_ord]
+        st.dataframe(pd.DataFrame(prev), use_container_width=True, hide_index=True)
 
     st.markdown(
         f"**Corte:** `{mes_corte}` &nbsp;|&nbsp; "
-        f"**Meses seleccionados:** {len(meses_sel)} &nbsp;|&nbsp; "
-        f"**Rango:** `{meses_sel_ord[0]}` → `{mes_corte}`",
+        f"**Meses en cartera:** {len(meses_sel)} &nbsp;|&nbsp; "
+        f"**Período:** `{meses_sel_ord[0]}` → `{meses_sel_ord[-1]}`",
         unsafe_allow_html=True
     )
 
@@ -209,11 +232,6 @@ if not st.session_state.df_acum.empty:
     df_fil["DIAS_ANTIG"] = df_fil["MES_ANIO"].apply(calc_dias)
     df_fil["RANGO"]      = df_fil["DIAS_ANTIG"].apply(rango)
 
-    # Excluir mes de corte (días = 0, rango = None)
-    n_corte = df_fil["RANGO"].isna().sum()
-    df_fil = df_fil[df_fil["RANGO"].notna()].copy()
-    if n_corte > 0:
-        st.info(f"ℹ️ El mes de corte **{mes_corte}** ({n_corte:,} registros) se excluye del cálculo de cartera.")
 
     # ── Detalle por NIU + mes ──────────────────────────────────────────────
     det_niu = (
