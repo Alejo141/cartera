@@ -64,11 +64,32 @@ def mes_a_fecha(mes_anio):
         return datetime.min
 
 def extraer_mes_anio(fecha_str):
+    """Parsea cualquier formato de fecha y retorna 'MMM-YYYY', ej: 'JUL-2023'."""
+    import pandas as pd
+    # Caso 1: datetime o Timestamp
+    if isinstance(fecha_str, (datetime, pd.Timestamp)):
+        return f"{MESES_ES[fecha_str.month]}-{fecha_str.year}"
+    s = str(fecha_str).strip()
+    # Caso 2: formatos ISO / con hora "2023-07-03" o "2023-07-03 00:00:00"
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(s[:len(fmt)], fmt)
+            return f"{MESES_ES[dt.month]}-{dt.year}"
+        except Exception:
+            pass
+    # Caso 3: ya viene como "OCT-2023"
     try:
-        p = str(fecha_str).strip().split("-")
+        partes = s.split("-")
+        if partes[0] in MESES_NUM:
+            return s
+    except Exception:
+        pass
+    # Caso 4: "DD-MM-YYYY"
+    try:
+        p = s.split("-")
         return f"{MESES_ES.get(int(p[1]), p[1])}-{p[2]}"
     except Exception:
-        return str(fecha_str)
+        return s
 
 def clasificar_rango(dias):
     if dias <= 0:      return None           # mes de corte o futuro
