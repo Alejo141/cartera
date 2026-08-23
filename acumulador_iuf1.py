@@ -10,7 +10,6 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .stApp { background: #F0F4F8; }
-
 .header-block {
     background: linear-gradient(135deg, #0D1B2A 0%, #1B3A5C 100%);
     border-radius: 12px; padding: 26px 32px; margin-bottom: 20px;
@@ -18,7 +17,6 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 }
 .header-title { color: #FFF; font-size: 21px; font-weight: 700; margin: 0; }
 .header-sub   { color: #7DB4D8; font-size: 12px; margin: 4px 0 0; }
-
 .section-title {
     font-size: 13px; font-weight: 700; color: #0D1B2A;
     border-bottom: 2px solid #D1D5DB; padding-bottom: 7px; margin: 22px 0 12px;
@@ -41,46 +39,54 @@ st.markdown("""
   <span style="font-size:34px">⚡</span>
   <div>
     <p class="header-title">Cartera por Edades · IUF1</p>
-    <p class="header-sub">DISPOWER S.A.S. E.S.P. · ZNI · Antigüedad de cartera por NIU y por Localidad (cada mes = 30 días)</p>
+    <p class="header-sub">DISPOWER S.A.S. E.S.P. · ZNI · Antigüedad de cartera por NIU y Localidad (cada mes = 30 días)</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── Estado ─────────────────────────────────────────────────────────────────────
-for k, v in [("df_acum", pd.DataFrame()), ("periodos_cargados", []), ("advertencias", [])]:
-    if k not in st.session_state:
-        st.session_state[k] = v
-
+# ── Constantes ─────────────────────────────────────────────────────────────────
 MESES_ES  = {1:"ENE",2:"FEB",3:"MAR",4:"ABR",5:"MAY",6:"JUN",
              7:"JUL",8:"AGO",9:"SEP",10:"OCT",11:"NOV",12:"DIC"}
 MESES_NUM = {v:k for k,v in MESES_ES.items()}
-RANGOS    = ["0 – 90 días", "91 – 360 días", "> 360 días"]
-COLOR_RANGO = {"0 – 90 días":"#16A34A", "91 – 360 días":"#D97706", "> 360 días":"#DC2626"}
-ORDEN_RANGO = {r:i for i,r in enumerate(RANGOS)}
+RANGOS       = ["0 – 90 días", "91 – 360 días", "> 360 días"]
+COLOR_RANGO  = {"0 – 90 días":"#16A34A", "91 – 360 días":"#D97706", "> 360 días":"#DC2626"}
+ORDEN_RANGO  = {r:i for i,r in enumerate(RANGOS)}
+COLS_LOCALIDAD = ["COD LOCALIDAD", "COD_LOCALIDAD"]
+COLS_FECHA     = ["FECH INI PERIO", "FEC_INICIO_PERIODO"]
+COLS_TARIFA    = ["TARIFA", "VALOR_TARIFA"]
 
+# ── Helpers ────────────────────────────────────────────────────────────────────
 def mes_a_fecha(mes_anio):
     try:
-        m, a = mes_anio.split("-")
+        m, a = str(mes_anio).strip().split("-")
         return datetime(int(a), MESES_NUM[m], 1)
-    except:
-        return None
+    except Exception:
+        return datetime.min
 
 def extraer_mes_anio(fecha_str):
     try:
         p = str(fecha_str).strip().split("-")
         return f"{MESES_ES.get(int(p[1]), p[1])}-{p[2]}"
-    except:
+    except Exception:
         return str(fecha_str)
 
-def rango(dias):
-    # Mes de corte (0 días) → excluido
-    # 1–4 meses atrás  (30–120)  → 0–90 días
-    # 5–12 meses atrás (150–360) → 91–360 días
-    # 13+ meses atrás  (>=390)   → > 360 días
-    if dias == 0:      return None
+def clasificar_rango(dias):
+    if dias <= 0:      return None           # mes de corte o futuro
     elif dias <= 120:  return "0 – 90 días"
     elif dias <= 360:  return "91 – 360 días"
     else:              return "> 360 días"
+
+def dias_entre(mes_anio, fecha_corte):
+    f = mes_a_fecha(mes_anio)
+    return ((fecha_corte.year - f.year) * 12 + (fecha_corte.month - f.month)) * 30
+
+# ── Estado de sesión ───────────────────────────────────────────────────────────
+if "df_acum" not in st.session_state:
+    st.session_state.df_acum = pd.DataFrame()
+if "periodos_cargados" not in st.session_state:
+    st.session_state.periodos_cargados = []
+if "advertencias" not in st.session_state:
+    st.session_state.advertencias = []
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASO 1 · CARGA
@@ -89,10 +95,10 @@ st.markdown('<p class="section-title">① Cargar archivos IUF1</p>', unsafe_allo
 
 archivos = st.file_uploader(
     "Selecciona uno o varios Excel IUF1 (uno por mes)",
-    type=["xlsx","xls"], accept_multiple_files=True
+    type=["xlsx", "xls"], accept_multiple_files=True
 )
 
-col_a, col_b = st.columns([1,5])
+col_a, col_b = st.columns([1, 5])
 with col_a:
     procesar = st.button("▶ Cargar", type="primary", use_container_width=True)
 with col_b:
@@ -102,10 +108,6 @@ with col_b:
         st.session_state.advertencias = []
         st.rerun()
 
-COLS_LOCALIDAD = ["COD LOCALIDAD", "COD_LOCALIDAD"]
-COLS_FECHA     = ["FECH INI PERIO", "FEC_INICIO_PERIODO"]
-COLS_TARIFA    = ["TARIFA", "VALOR_TARIFA"]
-
 if procesar and archivos:
     adv, nuevos = [], []
     for archivo in archivos:
@@ -114,34 +116,32 @@ if procesar and archivos:
             df = pd.read_excel(archivo, sheet_name=0, dtype=str)
             df.columns = df.columns.str.strip().str.upper()
 
-            # Detectar columna NIU
             if "NIU" not in df.columns:
                 adv.append(f"⚠️ **{nombre}**: no se encontró columna NIU."); continue
 
-            # Detectar columna localidad
             col_loc = next((c for c in COLS_LOCALIDAD if c in df.columns), None)
             if col_loc is None:
-                adv.append(f"⚠️ **{nombre}**: no se encontró columna COD LOCALIDAD ni COD_LOCALIDAD."); continue
+                adv.append(f"⚠️ **{nombre}**: no se encontró COD LOCALIDAD ni COD_LOCALIDAD."); continue
 
-            # Detectar columna fecha
             col_fecha = next((c for c in COLS_FECHA if c in df.columns), None)
             if col_fecha is None:
-                adv.append(f"⚠️ **{nombre}**: no se encontró columna FECH INI PERIO ni FEC_INICIO_PERIODO."); continue
+                adv.append(f"⚠️ **{nombre}**: no se encontró FECH INI PERIO ni FEC_INICIO_PERIODO."); continue
 
-            # Detectar columna tarifa
             col_tarifa = next((c for c in COLS_TARIFA if c in df.columns), None)
             if col_tarifa is None:
-                adv.append(f"⚠️ **{nombre}**: no se encontró columna TARIFA ni VALOR_TARIFA."); continue
+                adv.append(f"⚠️ **{nombre}**: no se encontró TARIFA ni VALOR_TARIFA."); continue
 
             df["NIU"]           = df["NIU"].str.strip()
             df["COD LOCALIDAD"] = df[col_loc].str.strip()
             df["MES_ANIO"]      = df[col_fecha].apply(extraer_mes_anio)
-            df["TARIFA"]        = pd.to_numeric(df[col_tarifa].str.replace(",","."), errors="coerce")
+            df["TARIFA"]        = pd.to_numeric(df[col_tarifa].str.replace(",", "."), errors="coerce")
+
             nulos = df["TARIFA"].isna().sum()
-            if nulos: adv.append(f"ℹ️ **{nombre}**: {nulos} filas con TARIFA no numérica omitidas.")
-            df = df.dropna(subset=["NIU","TARIFA"])
+            if nulos:
+                adv.append(f"ℹ️ **{nombre}**: {nulos} filas con TARIFA no numérica omitidas.")
+            df = df.dropna(subset=["NIU", "TARIFA"])
             df["_ARCHIVO"] = nombre
-            nuevos.append(df[["NIU","COD LOCALIDAD","MES_ANIO","TARIFA","_ARCHIVO"]])
+            nuevos.append(df[["NIU", "COD LOCALIDAD", "MES_ANIO", "TARIFA", "_ARCHIVO"]])
             if nombre not in st.session_state.periodos_cargados:
                 st.session_state.periodos_cargados.append(nombre)
         except Exception as e:
@@ -164,14 +164,14 @@ for a in st.session_state.advertencias:
     st.markdown(f'<div class="warn">{a}</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PASO 2 · SELECCIÓN DE MESES
+# PASO 2 · CONFIGURAR PERÍODO
 # ══════════════════════════════════════════════════════════════════════════════
 if not st.session_state.df_acum.empty:
     df_base = st.session_state.df_acum.copy()
 
     meses_disponibles = sorted(
         df_base["MES_ANIO"].unique(),
-        key=lambda x: mes_a_fecha(x) or datetime.min
+        key=mes_a_fecha
     )
 
     st.markdown('<p class="section-title">② Configurar período de cartera</p>', unsafe_allow_html=True)
@@ -185,17 +185,19 @@ if not st.session_state.df_acum.empty:
             options=meses_disponibles,
             index=len(meses_disponibles) - 1,
             label_visibility="collapsed",
-            help="La antigüedad se mide en meses hacia atrás desde este mes."
+            help="La antigüedad de cada mes se mide hacia atrás desde este mes."
         )
-        fecha_corte = mes_a_fecha(mes_corte)
+
+    fecha_corte = mes_a_fecha(mes_corte)
 
     with col_c2:
         st.markdown("**Meses de cartera** *(meses cuya tarifa se acumula)*")
-        meses_cartera_default = [m for m in meses_disponibles if mes_a_fecha(m) < fecha_corte]
+        opciones_cartera = [m for m in meses_disponibles if m != mes_corte]
+        default_cartera  = [m for m in opciones_cartera if mes_a_fecha(m) < fecha_corte]
         meses_sel = st.multiselect(
             "Meses de cartera",
-            options=[m for m in meses_disponibles if m != mes_corte],
-            default=meses_cartera_default,
+            options=opciones_cartera,
+            default=default_cartera,
             label_visibility="collapsed",
             help="Cada mes se clasifica según su distancia al mes de corte."
         )
@@ -204,13 +206,13 @@ if not st.session_state.df_acum.empty:
         st.info("Selecciona al menos un mes de cartera para continuar.")
         st.stop()
 
-    meses_sel_ord = sorted(meses_sel, key=lambda x: mes_a_fecha(x) or datetime.min)
+    meses_sel_ord = sorted(meses_sel, key=mes_a_fecha)
 
     with st.expander("👁 Ver antigüedad por mes seleccionado"):
-        def calc_dias_preview(m):
-            f = mes_a_fecha(m)
-            return ((fecha_corte.year - f.year)*12 + (fecha_corte.month - f.month)) * 30
-        prev = [{"Mes": m, "Días antigüedad": calc_dias_preview(m), "Rango": rango(calc_dias_preview(m))} for m in meses_sel_ord]
+        prev = []
+        for m in meses_sel_ord:
+            d = dias_entre(m, fecha_corte)
+            prev.append({"Mes": m, "Días antigüedad": d, "Rango": clasificar_rango(d) or "—"})
         st.dataframe(pd.DataFrame(prev), use_container_width=True, hide_index=True)
 
     st.markdown(
@@ -221,49 +223,38 @@ if not st.session_state.df_acum.empty:
     )
 
     # ══════════════════════════════════════════════════════════════════════════
-    # CÁLCULO BASE
+    # CÁLCULO
     # ══════════════════════════════════════════════════════════════════════════
-    def calc_dias(mes_anio):
-        f = mes_a_fecha(mes_anio)
-        if f is None or fecha_corte is None: return 0
-        return ((fecha_corte.year - f.year)*12 + (fecha_corte.month - f.month)) * 30
-
     df_fil = df_base[df_base["MES_ANIO"].isin(meses_sel)].copy()
-    df_fil["DIAS_ANTIG"] = df_fil["MES_ANIO"].apply(calc_dias)
-    df_fil["RANGO"]      = df_fil["DIAS_ANTIG"].apply(rango)
+    df_fil["DIAS_ANTIG"] = df_fil["MES_ANIO"].apply(lambda m: dias_entre(m, fecha_corte))
+    df_fil["RANGO"]      = df_fil["DIAS_ANTIG"].apply(clasificar_rango)
+    df_fil = df_fil[df_fil["RANGO"].notna()].copy()
 
-
-    # ── Detalle por NIU + mes ──────────────────────────────────────────────
+    # Detalle NIU × mes
     det_niu = (
         df_fil
-        .groupby(["NIU","COD LOCALIDAD","MES_ANIO","DIAS_ANTIG","RANGO"])["TARIFA"]
-        .sum().reset_index().rename(columns={"TARIFA":"TARIFA_ACUM"})
+        .groupby(["NIU", "COD LOCALIDAD", "MES_ANIO", "DIAS_ANTIG", "RANGO"])["TARIFA"]
+        .sum().reset_index().rename(columns={"TARIFA": "TARIFA_ACUM"})
     )
     det_niu["_ORD"] = det_niu["RANGO"].map(ORDEN_RANGO)
-    det_niu = det_niu.sort_values(["NIU","_ORD","MES_ANIO"]).drop(columns="_ORD").reset_index(drop=True)
+    det_niu = det_niu.sort_values(["NIU", "_ORD", "MES_ANIO"]).drop(columns="_ORD").reset_index(drop=True)
 
-    # ── Cartera total por NIU (suma de todos los meses seleccionados) ──────
+    # Cartera total por NIU
     cartera_niu = (
-        df_fil
-        .groupby(["NIU","COD LOCALIDAD"])["TARIFA"]
-        .sum().reset_index().rename(columns={"TARIFA":"TARIFA_TOTAL"})
+        df_fil.groupby(["NIU", "COD LOCALIDAD"])["TARIFA"]
+        .sum().reset_index().rename(columns={"TARIFA": "TARIFA_TOTAL"})
         .sort_values("TARIFA_TOTAL", ascending=False).reset_index(drop=True)
     )
 
-    # ── Cartera por localidad × rango ─────────────────────────────────────
-    cartera_loc = (
-        df_fil
-        .groupby(["COD LOCALIDAD","RANGO"])["TARIFA"]
-        .sum().reset_index().rename(columns={"TARIFA":"TARIFA_ACUM"})
-    )
-    pivot_loc = cartera_loc.pivot_table(
+    # Cartera por localidad × rango
+    pivot_loc = df_fil.pivot_table(
         index="COD LOCALIDAD", columns="RANGO",
-        values="TARIFA_ACUM", aggfunc="sum", fill_value=0
+        values="TARIFA", aggfunc="sum", fill_value=0
     ).reset_index()
     for r in RANGOS:
         if r not in pivot_loc.columns:
             pivot_loc[r] = 0
-    pivot_loc = pivot_loc[["COD LOCALIDAD"] + RANGOS]
+    pivot_loc = pivot_loc[["COD LOCALIDAD"] + RANGOS].copy()
     pivot_loc["TOTAL"] = pivot_loc[RANGOS].sum(axis=1)
     pivot_loc = pivot_loc.sort_values("TOTAL", ascending=False).reset_index(drop=True)
 
@@ -273,15 +264,14 @@ if not st.session_state.df_acum.empty:
     st.markdown('<p class="section-title">③ Resumen de cartera</p>', unsafe_allow_html=True)
 
     tot_gral = det_niu["TARIFA_ACUM"].sum()
-    cols_kpi = st.columns(4)
     kpi_data = [("Total cartera", f"${tot_gral:,.0f}", "#1B6CA8", f"{det_niu['NIU'].nunique():,} NIUs")] + [
         (rng,
-         f"${det_niu[det_niu['RANGO']==rng]['TARIFA_ACUM'].sum():,.0f}",
+         f"${det_niu[det_niu['RANGO'] == rng]['TARIFA_ACUM'].sum():,.0f}",
          color,
-         f"{det_niu[det_niu['RANGO']==rng]['TARIFA_ACUM'].sum()/tot_gral*100:.1f}% del total" if tot_gral else "0%")
+         f"{det_niu[det_niu['RANGO'] == rng]['TARIFA_ACUM'].sum() / tot_gral * 100:.1f}% del total" if tot_gral else "0%")
         for rng, color in COLOR_RANGO.items()
     ]
-    for col, (lbl, val, color, sub) in zip(cols_kpi, kpi_data):
+    for col, (lbl, val, color, sub) in zip(st.columns(4), kpi_data):
         with col:
             st.markdown(f"""
             <div class="kpi-card" style="--c:{color}">
@@ -293,12 +283,12 @@ if not st.session_state.df_acum.empty:
     st.markdown("<div style='margin-top:10px'></div>", unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PASO 4 · TABLAS EN PANTALLA
+    # PASO 4 · TABLAS
     # ══════════════════════════════════════════════════════════════════════════
     tab1, tab2, tab3 = st.tabs(["📋 Detalle por NIU", "🏘 Por Localidad", "💰 Cartera total NIU"])
 
     with tab1:
-        st.markdown('<p class="section-title">④ Detalle por NIU × Mes × Rango</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Detalle por NIU × Mes × Rango</p>', unsafe_allow_html=True)
         f1, f2, f3 = st.columns(3)
         with f1: f_niu = st.text_input("Filtrar NIU", placeholder="Ej. 444301441")
         with f2: f_loc = st.text_input("Filtrar COD LOCALIDAD", placeholder="Ej. 4443000000054")
@@ -309,36 +299,31 @@ if not st.session_state.df_acum.empty:
         if f_loc.strip(): t = t[t["COD LOCALIDAD"].str.contains(f_loc.strip(), na=False)]
         if f_rng != "Todos": t = t[t["RANGO"] == f_rng]
 
-        td = t[["NIU","COD LOCALIDAD","MES_ANIO","DIAS_ANTIG","RANGO","TARIFA_ACUM"]].copy()
-        td.columns = ["NIU","COD LOCALIDAD","MES-AÑO","DÍAS ANTIG.","RANGO","TARIFA ($)"]
+        td = t[["NIU", "COD LOCALIDAD", "MES_ANIO", "DIAS_ANTIG", "RANGO", "TARIFA_ACUM"]].copy()
+        td.columns = ["NIU", "COD LOCALIDAD", "MES-AÑO", "DÍAS ANTIG.", "RANGO", "TARIFA ($)"]
         td["TARIFA ($)"] = td["TARIFA ($)"].apply(lambda x: f"${x:,.2f}")
-        td.index = range(1, len(td)+1)
+        td.index = range(1, len(td) + 1)
         st.dataframe(td, use_container_width=True, height=420)
         st.caption(f"{len(td):,} registros · {t['NIU'].nunique():,} NIUs únicos")
 
     with tab2:
-        st.markdown('<p class="section-title">④ Cartera por Localidad × Rango</p>', unsafe_allow_html=True)
+        st.markdown('<p class="section-title">Cartera por Localidad × Rango</p>', unsafe_allow_html=True)
         td_loc = pivot_loc.copy()
-        for r in RANGOS:
-            td_loc[r] = td_loc[r].apply(lambda x: f"${x:,.2f}")
-        td_loc["TOTAL"] = td_loc["TOTAL"].apply(lambda x: f"${x:,.2f}" if isinstance(x, float) else x)
-        # recalcular TOTAL numérico para display
-        td_loc2 = pivot_loc.copy()
         for col in RANGOS + ["TOTAL"]:
-            td_loc2[col] = td_loc2[col].apply(lambda x: f"${x:,.2f}")
-        td_loc2.index = range(1, len(td_loc2)+1)
-        st.dataframe(td_loc2, use_container_width=True, height=420)
+            td_loc[col] = td_loc[col].apply(lambda x: f"${x:,.2f}")
+        td_loc.index = range(1, len(td_loc) + 1)
+        st.dataframe(td_loc, use_container_width=True, height=420)
         st.caption(f"{len(pivot_loc):,} localidades")
 
     with tab3:
-        st.markdown('<p class="section-title">④ Cartera total por NIU (suma de meses seleccionados)</p>', unsafe_allow_html=True)
-        f_niu2 = st.text_input("Filtrar NIU ", placeholder="Ej. 444301441", key="f_niu2")
+        st.markdown('<p class="section-title">Cartera total por NIU</p>', unsafe_allow_html=True)
+        f_niu2 = st.text_input("Filtrar NIU", placeholder="Ej. 444301441", key="f_niu2")
         t2 = cartera_niu.copy()
         if f_niu2.strip(): t2 = t2[t2["NIU"].str.contains(f_niu2.strip(), na=False)]
         td2 = t2.copy()
         td2["TARIFA_TOTAL"] = td2["TARIFA_TOTAL"].apply(lambda x: f"${x:,.2f}")
-        td2.columns = ["NIU","COD LOCALIDAD","TARIFA TOTAL ($)"]
-        td2.index = range(1, len(td2)+1)
+        td2.columns = ["NIU", "COD LOCALIDAD", "TARIFA TOTAL ($)"]
+        td2.index = range(1, len(td2) + 1)
         st.dataframe(td2, use_container_width=True, height=420)
         st.caption(f"{len(td2):,} NIUs")
 
@@ -346,74 +331,64 @@ if not st.session_state.df_acum.empty:
     # PASO 5 · EXPORTAR
     # ══════════════════════════════════════════════════════════════════════════
     st.markdown('<p class="section-title">⑤ Exportar</p>', unsafe_allow_html=True)
-    label_meses = f"{meses_sel_ord[0]}_a_{mes_corte}".replace(" ","")
+    label_meses = f"{meses_sel_ord[0]}_a_{meses_sel_ord[-1]}_corte_{mes_corte}".replace(" ", "")
 
     col_e1, col_e2 = st.columns(2)
 
-    # ── Excel 1: Cartera por edades (detalle + localidad + totales) ────────
     with col_e1:
         st.markdown("**📥 Excel 1 — Cartera por Edades**")
-        st.caption("Detalle NIU × Mes · Resumen por Localidad · Pivot NIU × Rango · Totales globales")
-
+        st.caption("Detalle NIU×Mes · Cartera×Localidad · Pivot NIU×Rango · Totales globales")
         out1 = io.BytesIO()
         with pd.ExcelWriter(out1, engine="openpyxl") as w:
-
-            # Hoja 1: detalle NIU × mes
-            e1 = det_niu[["NIU","COD LOCALIDAD","MES_ANIO","DIAS_ANTIG","RANGO","TARIFA_ACUM"]].copy()
-            e1.columns = ["NIU","COD LOCALIDAD","MES-AÑO","DÍAS ANTIGÜEDAD","RANGO CARTERA","TARIFA"]
+            e1 = det_niu[["NIU", "COD LOCALIDAD", "MES_ANIO", "DIAS_ANTIG", "RANGO", "TARIFA_ACUM"]].copy()
+            e1.columns = ["NIU", "COD LOCALIDAD", "MES-AÑO", "DÍAS ANTIGÜEDAD", "RANGO CARTERA", "TARIFA"]
             e1.to_excel(w, sheet_name="Detalle_NIU_Mes", index=False)
 
-            # Hoja 2: cartera por localidad × rango (NUEVA)
             e2 = pivot_loc.copy()
             e2.columns = ["COD LOCALIDAD"] + RANGOS + ["TOTAL"]
             e2.to_excel(w, sheet_name="Cartera_x_Localidad", index=False)
 
-            # Hoja 3: pivot NIU × rango
-            piv_niu_rango = det_niu.pivot_table(
-                index=["NIU","COD LOCALIDAD"], columns="RANGO",
+            piv = det_niu.pivot_table(
+                index=["NIU", "COD LOCALIDAD"], columns="RANGO",
                 values="TARIFA_ACUM", aggfunc="sum", fill_value=0
             ).reset_index()
             for r in RANGOS:
-                if r not in piv_niu_rango.columns: piv_niu_rango[r] = 0
-            piv_niu_rango = piv_niu_rango[["NIU","COD LOCALIDAD"] + RANGOS]
-            piv_niu_rango["TOTAL"] = piv_niu_rango[RANGOS].sum(axis=1)
-            piv_niu_rango.to_excel(w, sheet_name="Pivot_NIU_x_Rango", index=False)
+                if r not in piv.columns: piv[r] = 0
+            piv = piv[["NIU", "COD LOCALIDAD"] + RANGOS]
+            piv["TOTAL"] = piv[RANGOS].sum(axis=1)
+            piv.to_excel(w, sheet_name="Pivot_NIU_x_Rango", index=False)
 
-            # Hoja 4: totales globales por rango
             tot_rng = det_niu.groupby("RANGO")["TARIFA_ACUM"].sum().reset_index()
-            tot_rng.columns = ["RANGO CARTERA","TARIFA TOTAL"]
+            tot_rng.columns = ["RANGO CARTERA", "TARIFA TOTAL"]
             tot_rng["% DEL TOTAL"] = (tot_rng["TARIFA TOTAL"] / tot_rng["TARIFA TOTAL"].sum() * 100).round(2)
             tot_rng.to_excel(w, sheet_name="Totales_x_Rango", index=False)
 
         st.download_button(
             label="⬇️ Descargar Cartera por Edades",
             data=out1.getvalue(),
-            file_name=f"cartera_edades_IUF1_{label_meses}.xlsx",
+            file_name=f"cartera_edades_{label_meses}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary", use_container_width=True
         )
 
-    # ── Excel 2: Cartera total por NIU ────────────────────────────────────
     with col_e2:
         st.markdown("**📥 Excel 2 — Cartera Total por NIU**")
-        st.caption("Un renglón por NIU con la suma total de tarifa de los meses seleccionados")
-
+        st.caption("Un renglón por NIU con la suma total · Resumen por localidad")
         out2 = io.BytesIO()
         with pd.ExcelWriter(out2, engine="openpyxl") as w:
             e3 = cartera_niu.copy()
-            e3.columns = ["NIU","COD LOCALIDAD","TARIFA TOTAL"]
+            e3.columns = ["NIU", "COD LOCALIDAD", "TARIFA TOTAL"]
             e3.to_excel(w, sheet_name="Cartera_Total_NIU", index=False)
 
-            # resumen por localidad (total sin rangos)
             res_loc = cartera_niu.groupby("COD LOCALIDAD")["TARIFA_TOTAL"].sum().reset_index()
-            res_loc.columns = ["COD LOCALIDAD","TARIFA TOTAL"]
+            res_loc.columns = ["COD LOCALIDAD", "TARIFA TOTAL"]
             res_loc = res_loc.sort_values("TARIFA TOTAL", ascending=False).reset_index(drop=True)
             res_loc.to_excel(w, sheet_name="Total_x_Localidad", index=False)
 
         st.download_button(
             label="⬇️ Descargar Cartera Total NIU",
             data=out2.getvalue(),
-            file_name=f"cartera_total_NIU_IUF1_{label_meses}.xlsx",
+            file_name=f"cartera_total_NIU_{label_meses}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary", use_container_width=True
         )
