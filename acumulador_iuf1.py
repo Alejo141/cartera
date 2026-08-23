@@ -73,9 +73,14 @@ def extraer_mes_anio(fecha_str):
         return str(fecha_str)
 
 def rango(dias):
-    if dias <= 90:    return "0 – 90 días"
-    elif dias <= 360: return "91 – 360 días"
-    return "> 360 días"
+    # Mes de corte (0 días) → excluido
+    # 1–4 meses atrás  (30–120)  → 0–90 días
+    # 5–12 meses atrás (150–360) → 91–360 días
+    # 13+ meses atrás  (>=390)   → > 360 días
+    if dias == 0:      return None
+    elif dias <= 120:  return "0 – 90 días"
+    elif dias <= 360:  return "91 – 360 días"
+    else:              return "> 360 días"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASO 1 · CARGA
@@ -203,6 +208,12 @@ if not st.session_state.df_acum.empty:
     df_fil = df_base[df_base["MES_ANIO"].isin(meses_sel)].copy()
     df_fil["DIAS_ANTIG"] = df_fil["MES_ANIO"].apply(calc_dias)
     df_fil["RANGO"]      = df_fil["DIAS_ANTIG"].apply(rango)
+
+    # Excluir mes de corte (días = 0, rango = None)
+    n_corte = df_fil["RANGO"].isna().sum()
+    df_fil = df_fil[df_fil["RANGO"].notna()].copy()
+    if n_corte > 0:
+        st.info(f"ℹ️ El mes de corte **{mes_corte}** ({n_corte:,} registros) se excluye del cálculo de cartera.")
 
     # ── Detalle por NIU + mes ──────────────────────────────────────────────
     det_niu = (
