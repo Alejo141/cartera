@@ -63,37 +63,48 @@ def mes_a_fecha(mes_anio):
     except Exception:
         return datetime.min
 
-def extraer_mes_anio(fecha_str):
-    """Parsea cualquier formato de fecha y retorna 'MMM-YYYY', ej: 'JUL-2023'."""
+def extraer_mes_anio(fecha_val):
+    """
+    Convierte cualquier valor de fecha a 'MMM-YYYY'.
+    Leyendo el Excel sin dtype=str, las fechas llegan como Timestamp — caso principal.
+    Fallbacks para strings en distintos formatos.
+    """
     import pandas as pd
-    # Caso 1: datetime o Timestamp
-    if isinstance(fecha_str, (datetime, pd.Timestamp)):
-        return f"{MESES_ES[fecha_str.month]}-{fecha_str.year}"
-    s = str(fecha_str).strip()
-    # Caso 2: formatos ISO / con hora "2023-07-03" o "2023-07-03 00:00:00"
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(s[:len(fmt)], fmt)
-            return f"{MESES_ES[dt.month]}-{dt.year}"
-        except Exception:
-            pass
-    # Caso 3: ya viene como "OCT-2023"
+    # Caso 1: Timestamp o datetime (caso principal cuando se lee sin dtype=str)
+    if isinstance(fecha_val, (datetime, pd.Timestamp)):
+        return f"{MESES_ES[fecha_val.month]}-{fecha_val.year}"
+    s = str(fecha_val).strip()
+    # Caso 2: ya es "OCT-2023"
     try:
         partes = s.split("-")
-        if partes[0] in MESES_NUM:
+        if len(partes) == 2 and partes[0] in MESES_NUM and partes[1].isdigit():
             return s
+    except Exception:
+        pass
+    # Caso 3: "YYYY-MM-DD ..." (ISO)
+    try:
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            anio, mes = int(s[:4]), int(s[5:7])
+            return f"{MESES_ES[mes]}-{anio}"
     except Exception:
         pass
     # Caso 4: "DD-MM-YYYY"
     try:
         p = s.split("-")
-        return f"{MESES_ES.get(int(p[1]), p[1])}-{p[2]}"
+        if len(p) == 3 and len(p[2]) == 4:
+            return f"{MESES_ES.get(int(p[1]), p[1])}-{p[2]}"
     except Exception:
-        return s
+        pass
+    return s
 
 def clasificar_rango(dias):
-    if dias <= 0:      return None           # mes de corte o futuro
-    elif dias <= 120:  return "0 – 90 días"
+    # dias = (fecha_corte - mes) * 30
+    # El mes de corte tiene 0 días → excluido
+    # 0-90  días: 30-90   (meses 1 a 3 antes del corte)
+    # 91-360días: 120-360 (meses 4 a 12 antes del corte)
+    # >360  días: >=390   (13+ meses antes del corte)
+    if dias <= 0:      return None            # mes de corte o futuro
+    elif dias <= 90:   return "0 – 90 días"
     elif dias <= 360:  return "91 – 360 días"
     else:              return "> 360 días"
 
@@ -134,7 +145,8 @@ if procesar and archivos:
     for archivo in archivos:
         nombre = archivo.name
         try:
-            df = pd.read_excel(archivo, sheet_name=0, dtype=str)
+            # Leer sin dtype=str para preservar tipos nativos (fechas como Timestamp)
+            df = pd.read_excel(archivo, sheet_name=0)
             df.columns = df.columns.str.strip().str.upper()
 
             if "NIU" not in df.columns:
@@ -152,10 +164,12 @@ if procesar and archivos:
             if col_tarifa is None:
                 adv.append(f"⚠️ **{nombre}**: no se encontró TARIFA ni VALOR_TARIFA."); continue
 
-            df["NIU"]           = df["NIU"].str.strip()
-            df["COD LOCALIDAD"] = df[col_loc].str.strip()
+            df["NIU"]           = df["NIU"].astype(str).str.strip()
+            df["COD LOCALIDAD"] = df[col_loc].astype(str).str.strip()
+            # La columna de fecha puede ser Timestamp o string — extraer_mes_anio maneja ambos
             df["MES_ANIO"]      = df[col_fecha].apply(extraer_mes_anio)
-            df["TARIFA"]        = pd.to_numeric(df[col_tarifa].str.replace(",", "."), errors="coerce")
+            df["TARIFA"]        = pd.to_numeric(
+                df[col_tarifa].astype(str).str.replace(",", "."), errors="coerce")
 
             nulos = df["TARIFA"].isna().sum()
             if nulos:
