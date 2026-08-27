@@ -223,7 +223,16 @@ if not st.session_state.df_acum.empty:
             help="La antigüedad de cada mes se mide hacia atrás desde este mes."
         )
 
-    fecha_corte = mes_a_fecha(mes_corte)
+    # El usuario selecciona el mes a CALCULAR (ej AGO-2024)
+    # La antigüedad se mide desde el mes ANTERIOR (JUL-2024 = 0 días)
+    _fc = mes_a_fecha(mes_corte)
+    from datetime import timedelta
+    import calendar
+    # Restar un mes
+    if _fc.month == 1:
+        fecha_corte = _fc.replace(year=_fc.year - 1, month=12)
+    else:
+        fecha_corte = _fc.replace(month=_fc.month - 1)
 
     with col_c2:
         st.markdown("**Meses de cartera** *(meses cuya tarifa se acumula)*")
@@ -250,8 +259,10 @@ if not st.session_state.df_acum.empty:
             prev.append({"Mes": m, "Días antigüedad": d, "Rango": clasificar_rango(d) or "—"})
         st.dataframe(pd.DataFrame(prev), use_container_width=True, hide_index=True)
 
+    mes_corte_interno = f"{list(MESES_ES.values())[fecha_corte.month-1]}-{fecha_corte.year}"
     st.markdown(
-        f"**Corte:** `{mes_corte}` &nbsp;|&nbsp; "
+        f"**Mes a calcular:** `{mes_corte}` &nbsp;|&nbsp; "
+        f"**Referencia interna (0 días):** `{mes_corte_interno}` &nbsp;|&nbsp; "
         f"**Meses en cartera:** {len(meses_sel)} &nbsp;|&nbsp; "
         f"**Período:** `{meses_sel_ord[0]}` → `{meses_sel_ord[-1]}`",
         unsafe_allow_html=True
